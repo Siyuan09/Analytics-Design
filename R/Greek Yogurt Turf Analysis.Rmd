@@ -1,0 +1,276 @@
+---
+title: "Greek Yogurt Case - Group 6 - Siyuan Feng, Yue Hu, Yisu Zhao, Yilan Zhang, Jiaqi Xu"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+First, we started to clean the data, since there's a lot noises in the dataset.
+
+In order to keep the effective responses, the incomplete responses, or long-time responses are deleted.
+
+Furthermore, because we realize some of the responses do not fill in answers to Q12 even if they are completed, we delete those answers to ensure the result is effective.
+
+For TURF analysis, we should consider whether our consumers are reached. The survey answer includes the frequency of purchasing, however, whether they would buy yogurt frequently or not, they are considered as people who would purchase our product. As a result, we changed '2' into '0', indicating they would not buy the product, and '0' & '1' in the origin data are changed to '1' in the new dataset (surA5).
+
+```{r}
+library(ggplot2)
+setwd('~/Downloads') # change working the direction
+surQ <- read.csv("survQuestions.csv", header = TRUE)
+surA <- read.csv('survResponses.csv', header = TRUE) # Load data
+surA$difftime <- difftime(surA$V9,surA$V8) # Calculate the length of time to finish the survey
+surA$difftime <- as.numeric(surA$difftime)
+surA1 <- subset(surA[which(surA$V10 == 1),]) # Select responses that finished the survey without quit
+surA2 <- surA1[which(surA1$difftime <= 20000),] # Delete the responses that spend long time to finish survey
+
+
+# Delete the responses with no answers to Q12
+recol <- c()
+for (i in (1:nrow(surA2))){
+    if (all(is.na(surA2[i,c(15:37)]))) {
+      recol <- append(recol,i)
+    }
+}
+
+surA3 <- surA2[-recol,]
+
+# Change the order of Q23 to the end of the questions
+surA4 <- surA3[,c(1:29,31:37,30,38)]
+
+# Keep a back-up for this dataframe
+surA5 <- surA4
+
+# For TURF analysis, we should keep only 0,1 for not buy and buy
+for (i in (1:nrow(surA5))){
+  for (j in 1:23){
+  ifelse(surA5[i,j+14] > 1, surA5[i,j+14] <- 0, surA5[i,j+14] <- 1)
+  }
+}
+```
+
+
+After cleaning the data, for question 1), we calculate the percentage of sales of the existing flavor of greek yogurt. We use unit sales because the dollar sales would be influenced by the coupon shown in the database. For a more direct visualisation, unit sales is more reasonable.
+```{r}
+#############################
+#    OUTPUT FOR SLIDE 3     #
+#############################
+
+storesales <- read.csv('storesales.csv', header = TRUE) # Load the data (export from SQL)
+names(storesales) <- c('Item_Num','Flavor','Class','Units','Sales') # Rename the dataset
+greek<- storesales[which(storesales$Class == 'GREEK'), ] # Select the greek yogurt data
+greeksales <- aggregate(greek$Units, by = list(greek$Flavor), FUN = sum) # Aggregate the sales for each flavor
+greeksales$percent <- greeksales[2]/sum(greeksales[2])*100 # Calculate the percentage of sales
+names(greeksales) <- c('Flavor','Units','Percentage') # Rename the dataset to be more readable
+```
+
+For question 2), we repeat the steps above to calculate the percentage of sales of regular yogurt.
+```{r}
+#############################
+#    OUTPUT FOR SLIDE 3     #
+#############################
+
+regular <- storesales[which(storesales$Class == 'REGULAR'), ] # Select the regular yogurt data
+regularsales <- aggregate(regular$Units, by = list(regular$Flavor), FUN = sum) # Aggregate the sales
+regularsales$percent <- regularsales[2]/sum(regularsales[2])*100 # Calculate the percentage of the sales
+names(regularsales) <- c('Flavor','Units','Percentage') # Rename the dataset
+```
+
+For question 3), we analyze the survey data for each flavor. Since mean ranking for each data is not reasonable enough to explain the preference of consumers, we also calculate the median ranking for each flavor. For the plot chart, '0' is favorable since consumers would buy regularly, '1' stands for consumers would buy occasionally, and '2' infers that consumers would never buy the yogurt.
+From the chart, we realize the difference between mean and median, where median shows that most consumers' preference. Therefore, we think median ranking is more convincing.
+```{r}
+#############################
+#    OUTPUT FOR SLIDE 4     #
+#############################
+
+Q12 <- surA4[,c(15:37)] # Subset the data for Q12
+
+Q12mean <- colMeans(Q12, na.rm = TRUE) # Calculate the mean ranking for each flavor
+
+# Rename the Q12 dataset to get a more clear visualization
+flavor <- c('almond','banana','black cherry','blueberry','caramel','chai','chocolate', 'cinnamon', 'coconut', 'honey', 'key lime pie','lemon', 'mango','maple','pineapple','plain','pomegranate', 'raspberry','strawberry','strawban','vanilla','vanilla banana','peach') 
+names(Q12mean) <- flavor
+
+# Calculate the median ranking for each flavor
+Q12median <- c()
+for (i in c(1:23)){
+    MEDIAN <- median(Q12[,i],na.rm = TRUE)
+    Q12median <- append(Q12median, MEDIAN)
+}
+names(Q12median) <- flavor # Rename the dataset
+
+# Plot the dataset 
+barplot(Q12mean,col = '#c9bbcb', xlab = 'Flavors', ylab = 'Mean')
+barplot(Q12median, col = '#c9bbcb',xlab = 'Flavors', ylab = 'Median')
+```
+
+
+For question 4), we think TURF would be the best way to explain reach for our products. Therefore, we wrote the functions to plot TURF
+```{r}
+#measReach: measures reach given set of options and data
+  ##Arguments:
+  ##  data contains measure of proxy for whether will buy or not, positive values mean will buy/use
+  ##Return:
+  ##  scalar, reach, calculated as % of all cases that will buy at least one in set
+measReach = function(data){
+  if(is.null(dim(data))){ #if data is a vector
+    ret = sum(data>0,na.rm=TRUE)/length(data)
+  } else if(ncol(data)==1){ #if data has only one column
+    ret = sum(data>0,na.rm=TRUE)/length(data)
+  }
+  else { #if data has multiple columns
+    ret = sum(apply(data>0,1,any),na.rm=TRUE)/nrow(data)
+  }
+}
+
+#evalNext: evaluates the next set, nextSet using measure given existing set in data
+  ##Arguments:
+  ##  nextSet, set are numeric indexes into columns of data
+  ##  data contains measure of proxy for whether will buy or not, positive values mean will buy/use
+  ##  measure is a valid measure of evaluation when passed a subset of columns in data
+  ##Return:
+  ##  numeric vector of values calculated using measure for each option in nextSet given set already exists
+evalNext = function(nextSet,set,data,measure=measReach){
+  vals = numeric(length(nextSet)) #set up storage for return value
+  for(k in 1:length(nextSet)){ #loop over the options in nextSet
+    if(length(set)==0){         #if no existing options
+      vals[k] = measure(data[,nextSet[k]]) 
+    } else {                    #if existing options
+      vals[k] = measure(data[,c(set,nextSet[k])])
+    }
+  }
+  vals
+}
+
+#evalFull: creates optimal full evaluation starting from origSet and considering remaining options fullSet
+  ##Arguments:
+  ##  fullSet, origSet are numeric indexes into columns of data
+  ##  data contains measure of proxy for whether will buy or not, positive values mean will buy/use
+  ##  measure is a valid measure of evaluation when passed a subset of columns in data
+  ##Return:
+  ##  turf object, an named list containing
+  ##    ordSet, the ordered set of optimal options to add to original set
+  ##    optVals, the optimal values of measure as you add each optimal option
+  ##    origSet, same value as passed, the original set of options included
+  ##    origVal, the value of measure for the original set
+  ##    measure, same value as passed, the measure used
+  ##    pnames, the names of the options taken from the columns of data
+evalFull = function(fullSet,data,origSet=numeric(0),measure=measReach){
+  curSet = origSet; #the current set of included options
+  remSet = fullSet[!(fullSet%in%origSet)]; #the remaining set of options to consider
+  K = length(remSet)
+  optVals = numeric(K); #create storage for the optimal values (optVals)
+  ordSet = numeric(K); #create storage for ordered set
+  for(i in 1:K){          #loop over the remaining set consider
+    tmpVals = evalNext(remSet,curSet,data,measure); #calculate vector of next evaluations
+    k = which.max(tmpVals) #pick the option that gives max measure, note will pick first case if a tie!
+    optVals[i] = tmpVals[k] #add optimal value
+    ordSet[i] = remSet[k]   #add index of option that creates optimal value
+    curSet = c(curSet,ordSet[i]); #add optimal next option to current set
+    remSet = remSet[-k];          #delete optimal next option from remaining set
+  }
+  #creaets a "TURF object" containing ordSet, optVals, origSet, origVal, measure, and pnames
+  turf = list(ordSet=ordSet,optVals=optVals,origSet=origSet,origVal=measure(data[,origSet]),measure=measure,pnames=colnames(data))
+  class(turf)="TURF" #makes the list into a TURF object so that can call plot.TURF
+  turf  #return turf
+}
+
+#creates ggplot barplot for a turf object
+plot.TURF=function(turf,...){
+  if(class(turf)!="TURF"){
+    cat("Object not a turf.")
+  } else {
+    df = with(turf,data.frame(vals = c(origVal,optVals),titles=paste(0:length(ordSet),c("Original",pnames[ordSet]),sep=":")))
+    #with(turf,barplot(c(origVal,optVals),names.arg=c("Original",pnames[ordSet])))
+    dodge = position_dodge(width=.75); ##to form constant dimensions positioning for all geom's
+    gp = ggplot(df,aes(y=vals,x=titles))
+    gp + geom_bar(position=dodge,stat="identity",col='#8d8c8d',fill='#aac9ce',width=.75)
+  }
+}
+```
+
+Plot the TURF for better understanding
+```{r}
+#############################
+#    OUTPUT FOR SLIDE 5     #
+#############################
+
+turf_sur <- surA5[,c(15:37)] # Get the subset for the dataset
+names(turf_sur) <- flavor # Rename the dataset
+turf = evalFull(c(1:23), turf_sur, c(4,10,16,19,21,23)) # TURF
+plot(turf) # Plot TURF
+```
+
+For addtional analysis(we include them in PPT), we analyze the relationship between household numbers and black cherry sales in order to further analysis the package for black cherry yogurt. Since the smaller size family would buy more yogurt than large family size, we recommand to launch small package of black cherry yogurt.
+```{r}
+#############################
+#    OUTPUT FOR SLIDE 6     #
+#############################
+
+hshldDemograph <- read.csv('hshldDemograph.csv', header = TRUE) # Load data
+randsales_hshld <- read.csv('randsales_hshld.csv', header = TRUE) # Load data
+randsales_hshld <- aggregate(formula=Units~Household.Num+Flavor1, data=randsales_hshld, FUN=sum) # Aggregate dataset by household and flavor
+randsales_hshld <- merge(randsales_hshld, hshldDemograph, by="Household.Num") # Merge dataset
+blackcherry <- subset(randsales_hshld, Flavor1=="black cherry") # Select black cherry flavor
+blackcherry <- aggregate(x = blackcherry$Units, by = list(blackcherry$FamilySize),FUN=mean) # Calculate the averageunits of sales of black cherry yogurt by each family size
+
+# Rename the dataset
+colnames(blackcherry)[1] <- "FamilySize"
+colnames(blackcherry)[2] <- "Units"
+
+# Calculate the units per person bought by each family size
+for (i in 1:9){
+    blackcherry$Units[i]=blackcherry$Units[i]/i
+}
+
+# Reorganize the dataset for visualization
+blackcherry_plot <- blackcherry$Units
+names(blackcherry_plot) <- blackcherry$FamilySize
+
+# Plot the dataset
+barplot(blackcherry_plot, col = '#c9bbcb', xlab = 'Family Size', ylab = 'Units per person')
+```
+
+
+Here are SQL code for our analysis.
+```{r}
+##################
+#    SQL CODE    #
+##################
+
+#############
+#Use dataset#
+#############
+#show databases;
+#use retailer1;
+
+######################
+#Check each dataframe#
+######################
+#select * from hshldDemograph;
+#select * from itemsAttributes;
+#select * from randItemSales;
+#select * from storeItemSales;
+#select * from survItemSales;
+
+###############################################
+#Join storesales and attributes by item number#
+###############################################
+#select storeItemSales.`Item.Num`, Flavor1, sum(Units), Class from 
+#storeItemSales join itemsAttributes on storeItemSales.`Item.Num` = itemsAttributes.`Item.Num`
+#group by storeItemSales.`Item.Num`;
+
+################################################################
+#Join household dataset with survey item sales dataset to      #
+#find the patten among household numbers and black cherry sales#
+################################################################
+#select hshldDemograph.`Household.Num`, FamilySize, NumAdults, Flavor1, sum(units) from 
+#hshldDemograph join survItemSales  on hshldDemograph.`Household.Num` = survItemSales.`Household.Num`
+#join itemsAttributes on survItemSales.`Item.Num` = itemsAttributes.`Item.Num`
+#where Flavor1 = 'black cherry'
+#group by hshldDemograph.`Household.Num`;
+
+```
+
+

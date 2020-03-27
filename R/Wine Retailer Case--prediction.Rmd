@@ -1,0 +1,217 @@
+---
+title: "Wine Case - Siyuan Feng/Yue Hu/Jiaqi Xu/Yilan Zhang/Yisu Zhao"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+a) Evaluation of the average causal effect: For this section, we first look at the average effect of open, click and purch. Then plot a bar chart to see the results.
+```{r}
+rm(list = ls())
+library(dplyr)
+library(tidyr)
+library(data.table)
+library(ggplot2)
+library(grf)
+
+wine <- read.csv('~/Downloads/test_data_1904.csv', stringsAsFactors = F, header = TRUE)
+summary(wine)
+
+# Depicit average causal effect of variables to get a general idea
+wine_table = data.table(wine)
+dagg = wine_table[,.(open = mean(open), click=mean(click), purch = mean(purch),seOpen = sd(open)/sqrt(.N), seClick=sd(click)/sqrt(.N), sePurch = sd(purch)/sqrt(.N),.N),by = .(group)]
+dagg
+dodge = position_dodge(width=1); ##to form constant dimensions
+ggplot(aes(x=group,y=purch,ymax=purch+sePurch,ymin=purch-sePurch),data=dagg)+
+  geom_bar(position=dodge,stat="identity", fill =c("#803838", "#1E4163"))  +
+  geom_errorbar(position=dodge)
+  labs(x="Group",y="Purchases") 
+```
+
+What's more, we also want to look at the effect of applying email. However, there would be some contamination/omit variables which makes the prediction not precise, therefore, we add control variables as baseline. After this step, we realized that last purchase should be removed becasue of the colinearity. Furthermore, aware of the recency would have impact on the prediction, as a result, we finalized a time period for the recent purchase.
+```{r}
+# Get the average causal effect without control variables
+summary(lm(purch~group,data=wine))
+
+wine$email = (wine$group != "ctrl")
+
+summary(lm(purch~email,data=wine))
+
+# Add control variables since there may be some contamination
+summary(lm(purch~email+chard+sav_blanc+syrah+cab+past_purch+last_purch+visits,data=wine))
+
+# Rule out the 'past purchase' because of colinearity
+summary(lm(purch~group+chard+sav_blanc+syrah+cab+last_purch+visits,data=wine))
+
+# Plot the histogram for most recent purchase
+hist(wine$last_purch, 
+     xlab="Days Since Last Purchase", ylab="Customers", 
+     main="Histogram of Days Since Last Purchase")
+
+# Find the time period for recency
+wine$recentPurch = (wine$last_purch < 45)
+```
+
+b)Slice and dice analysis: For this section, we illustrated the potential for targeting on response for this email with various causal effects which make differences. And plot each slice and dice analysis results.
+```{r}
+# Slice and dice analysis for test groups
+# Rencency
+
+dt = data.table(wine)
+dagg = dt[,.(open = mean(open), click=mean(click), purch = mean(purch),seOpen = sd(open)/sqrt(.N), seClick=sd(click)/sqrt(.N), sePurch = sd(purch)/sqrt(.N),.N),by = .(group,recentPurch)]
+
+dodge = position_dodge(width=1); 
+ggplot(aes(fill=group,y=purch,x=recentPurch,ymax=purch+sePurch,ymin=purch-sePurch),data=dagg)+
+  geom_bar(position=dodge,stat="identity") + scale_fill_manual(values=c("#803838", "#1E4163")) +
+  geom_errorbar(position=dodge)
+  labs(x="Group",y="Purchases")
+```
+
+```{r}
+# Slice and dice analysis for test groups
+# buySyrah but may not useful since based on the coefficients, Syrah is not significant.
+
+wine$buySyrah <- (wine$syrah > 0) # >0 to show whether bought this product
+dt = data.table(wine)
+dagg = dt[,.(open = mean(open), click=mean(click), purch = mean(purch),seOpen = sd(open)/sqrt(.N), seClick=sd(click)/sqrt(.N), sePurch = sd(purch)/sqrt(.N),.N),by = .(group,buySyrah)] 
+dagg
+
+#Plot the results
+dodge = position_dodge(width=1); 
+ggplot(aes(fill=group,y=purch,x=buySyrah,ymax=purch+sePurch,ymin=purch-sePurch),data=dagg)+
+  geom_bar(position=dodge,stat="identity") + scale_fill_manual(values=c("#803838", "#1E4163")) +
+  geom_errorbar(position=dodge)
+  labs(x="Group",y="Purchases")
+```
+
+```{r}
+# Slice and dice analysis for test groups
+# buyChard
+
+wine$buyChard <- (wine$chard > 0) # >0 to show whether bought this product
+dt = data.table(wine)
+dagg = dt[,.(open = mean(open), click=mean(click), purch = mean(purch),seOpen = sd(open)/sqrt(.N), seClick=sd(click)/sqrt(.N), sePurch = sd(purch)/sqrt(.N),.N),by = .(group,buyChard)] 
+dagg
+
+#Plot the results
+dodge = position_dodge(width=1); 
+ggplot(aes(fill=group,y=purch,x=buyChard,ymax=purch+sePurch,ymin=purch-sePurch),data=dagg)+
+  geom_bar(position=dodge,stat="identity") + scale_fill_manual(values=c("#803838", "#1E4163")) +
+  geom_errorbar(position=dodge)
+  labs(x="Group",y="Purchases")
+```
+
+```{r}
+# Slice and dice analysis for test groups
+# buySav_blanc
+
+wine$buySav_blanc  <- (wine$sav_blanc > 0) 
+dt = data.table(wine)
+dagg = dt[,.(open = mean(open), click=mean(click), purch = mean(purch),seOpen = sd(open)/sqrt(.N), seClick=sd(click)/sqrt(.N), sePurch = sd(purch)/sqrt(.N),.N),by = .(group,buySav_blanc )] 
+dagg
+
+#Plot the results
+dodge = position_dodge(width=1); 
+ggplot(aes(fill=group,y=purch,x=buySav_blanc ,ymax=purch+sePurch,ymin=purch-sePurch),data=dagg)+
+  geom_bar(position=dodge,stat="identity") +  scale_fill_manual(values=c("#803838", "#1E4163")) +
+  geom_errorbar(position=dodge)
+  labs(x="Group",y="Purchases")  
+```
+
+```{r}
+# Slice and dice analysis for test groups
+# buyCab
+
+wine$buyCab  <- (wine$cab > 0) # or > 0 
+dt = data.table(wine)
+dagg = dt[,.(open = mean(open), click=mean(click), purch = mean(purch),seOpen = sd(open)/sqrt(.N), seClick=sd(click)/sqrt(.N), sePurch = sd(purch)/sqrt(.N),.N),by = .(group,buyCab )] 
+dagg
+
+#Plot the results
+dodge = position_dodge(width=1); 
+ggplot(aes(fill=group,y=purch,x=buyCab ,ymax=purch+sePurch,ymin=purch-sePurch),data=dagg)+
+  geom_bar(position=dodge,stat="identity") + scale_fill_manual(values=c("#803838", "#1E4163")) +
+  geom_errorbar(position=dodge)
+  labs(x="Group",y="Purchases")  
+
+```  
+
+```{r}
+# Try different products' causal effect on purchasing
+
+summary(lm(purch~email*recentPurch,data=wine)) 
+
+summary(lm(purch~recentPurch + email:recentPurch,data=wine))
+
+summary(lm(purch~buyCab + buyCab:group,data=wine))
+
+summary(lm(purch~buySav_blanc + buySav_blanc:group,data=wine))
+
+summary(lm(purch~buyChard + buyChard:group,data=wine))
+
+```
+
+c)“Individual-level” conditional causal effect: For this section, we use causal forest to further validate our results of previous model. Causal forest was applied in this part. The blackbox model of causal forest would give us results and importance of different variables automatically with machine learning. And we also predict the training data based on the model, as well as estimate the average treatment effect for the target sample.
+```{r}
+#Causal forest
+
+set.seed(0) # To produce identical results
+treat <- wine$email
+response <- wine$purch
+baseline <- wine[, c("last_purch", "visits", "chard", "sav_blanc", "syrah", "cab")]
+tmp=proc.time()[3]
+cf <- causal_forest(baseline, response, treat)
+tmp = proc.time()[3]-tmp
+print(cf)
+
+#Find the average treatment effect of causal forest
+average_treatment_effect(cf, method="AIPW")
+```
+
+Taking the margin and cost into account, we also estimate who should be sent email.
+```{r}
+#Predict the data
+predict(cf)
+
+#Create a file for prediction
+predict_form <- predict(cf)
+
+#Plot the overall purchase lift for 
+hist(predict(cf)$predictions, 
+     main="Histogram of Purchase Lift", 
+     xlab="Purchase Lift for Email", ylab="Customers")
+
+#Calculate the margin and decide whether to send emails
+predict_form$margin <- predict_form$predictions * 0.3 - 0.1
+predict_form$sent <- predict_form$margin > 0
+
+#Find the average causal effect based on the people who should be sent emails
+dt_wine = data.table(wine[predict_form$sent,])
+dagg = dt_wine[,.(open = mean(open), click=mean(click), purch = mean(purch),seOpen = sd(open)/sqrt(.N), seClick=sd(click)/sqrt(.N), sePurch = sd(purch)/sqrt(.N),.N),by = .(group)]
+
+```
+
+And we assign the score for the training data and show the characteristics of the target group and non-target group.
+```{r}
+#Assign score based on the margin and cost
+wine[,c('prediction','debiased.error', 'excess.error', 'score','sent')]<- predict_form[,1:5]
+
+
+#Give a general view of the target and non-target group
+summary(wine[predict_form$sent,c('purch','chard','sav_blanc','syrah','cab','past_purch','last_purch','visits')])
+summary(wine[!predict_form$sent,c('purch','chard','sav_blanc','syrah','cab','past_purch','last_purch','visits')])
+
+#Find the colmeans of each variables for target group and non-target group
+char_target <- colMeans(wine[predict_form$sent,c('purch','chard','sav_blanc','syrah','cab','past_purch','last_purch','visits','recentPurch')])
+char_non_target <- colMeans(wine[!predict_form$sent,c('purch','chard','sav_blanc','syrah','cab','past_purch','last_purch','visits','recentPurch')])
+
+```
+
+```{r}
+#Calculate the proortion of target consumers based on the whole training data
+nrow(wine[predict_form$sent,])/nrow(wine)*100
+
+````
